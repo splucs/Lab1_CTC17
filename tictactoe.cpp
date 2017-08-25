@@ -35,8 +35,7 @@ void mask2board(int mask, int board[3][3]) {
 	}
 }
 
-//current board global variable
-
+//returns index of player if someone won, 0 if game ended in tie, -1 if game has not ended
 int check(int board[3][3]) {
 	//check lines
 	for(int i=0; i<3; i++) {
@@ -125,7 +124,7 @@ void completeSearch() {
 				}
 			}
 			
-			//random move at starting position
+			//random move at starting position, make it more fun since it will never lose
 			else if (mask == 0) {
 				dp[mask][turn] = TIE_POS;
 				npos = rand()%9;
@@ -175,6 +174,7 @@ void completeSearch() {
 	}
 }
 
+//given a board and a player, returns how many sets are still possible for that player
 int possibleWinningSets(int board[3][3], int turn) {	//turn 1-indexed
 	int answer = 0;
 	bool found;
@@ -215,7 +215,7 @@ int possibleWinningSets(int board[3][3], int turn) {	//turn 1-indexed
 	return answer;
 }
 
-//uses number of winning states and umber of losing states as heuristic
+//uses number of winning states and number of losing states as heuristic
 int getNextState(int mask, int turn) {	//turn 0-indexed
 	int board[3][3], bestmask = -1, balance, newmask, bestbalance = -INF;
 	
@@ -228,8 +228,12 @@ int getNextState(int mask, int turn) {	//turn 0-indexed
 			if (board[i][j] != 0) continue;
 			board[i][j] = 1+turn;
 			newmask = board2mask(board);
+			
+			//heuristic: number of possible winning sets for me minus number of possible winning sets for oponent
 			balance = possibleWinningSets(board, 1+turn) - possibleWinningSets(board, 2-turn);
 			board[i][j] = 0;
+			
+			//update best choice
 			if (balance > bestbalance) {
 				bestbalance = balance;
 				bestmask = newmask;
@@ -250,6 +254,7 @@ void getHumanInput(int * row, int * col, int gameBoard[3][3], int turn) {	//turn
 	}
 }
 
+//prints current game state
 void printGameState(int turn, bool over, int gameBoard[3][3]) {
 	
 	printf("================================================================\n");
@@ -331,11 +336,11 @@ int main() {
 	do {
 		
 		//reads game type
-		printf("Please input type of game players:\n%d = human, %d = heuristic machine, %d = complete search machine\n",
+		printf("Please input type of game players (two numbers):\n%d = human, %d = heuristic machine, %d = complete search machine\n",
 			TYPE_HUMAN, TYPE_HEURISTIC, TYPE_COMPLETE);
 		while(scanf("%d %d", &t1, &t2) != 2 || t1 < 0 || t1 > 2 || t2 < 0 || t2 > 2) {
 			fflush(stdin);
-			printf("Invalid input. Please input type of game players:\n");
+			printf("Invalid input. Please input type of game players (two numbers):\n");
 		}
 		turnTypes[0] = t1;
 		turnTypes[1] = t2;
