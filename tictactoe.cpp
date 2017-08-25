@@ -2,12 +2,16 @@
 #include <stdlib.h>
 #include <time.h>
 #define MAXS 19683
-#define LOS_POS 	(1<<0)
-#define TIE_POS 	(1<<1)
-#define WIN_POS 	(1<<2)
+#define LOS_POS -1
+#define TIE_POS 0
+#define WIN_POS 1
+#define TYPE_HUMAN 0
+#define TYPE_HEURISTIC 1
+#define TYPE_COMPLETE 2
+#define INF (1<<30)
 
-//dynamic programming, optimal next state, min precedence
-int dp[MAXS][2], nxt[MAXS][2], prec[MAXS][2];
+//dynamic programming, optimal next state, winning possibilities
+int dp[MAXS][2], nxt[MAXS][2], winbal[MAXS][2];
 
 //given a board, build the mask
 int board2mask(int board[3][3]) {
@@ -32,9 +36,8 @@ void mask2board(int mask, int board[3][3]) {
 }
 
 //current board global variable
-int board[3][3];
 
-int check() {
+int check(int board[3][3]) {
 	//check lines
 	for(int i=0; i<3; i++) {
 		if (board[i][0] == 0) continue;
@@ -86,49 +89,59 @@ int check() {
 	return -1;
 }
 
-void precompute() {
+void completeSearch() {
 	
 	//truly random moves
 	srand(time(NULL));
 	
-	//precedence, a situation with less precedence is more desirable
-	//situation refers to the enemy's next move, a losing position for him is desirable
-	int precedence[10];
-	precedence[LOS_POS] 					= 0;
-	precedence[LOS_POS | TIE_POS] 			= 1;
-	precedence[TIE_POS] 					= 2;
-	precedence[LOS_POS | TIE_POS | WIN_POS] = 3;
-	precedence[LOS_POS | WIN_POS] 			= 4;
-	precedence[TIE_POS | WIN_POS] 			= 5;
-	precedence[WIN_POS] 					= 6;
-	
-	//possible next states with minimum precedence
-	int possibilities[10], npos, myprec;
+	//possible next states with minimum value
+	int possibilities[10], npos;
+	int board[3][3];
 	
 	for(int mask=MAXS-1; mask >=0; mask--) {
 		
 		//build current board and get current situation
 		mask2board(mask, board);
 		//1 = player 1 win, 2 = player 2 win, 0 = tie, -1 = ongoing
-		int finalSituation = check();
+		int finalSituation = check(board);
 		
 		//turn 0 = player 1, turn 1 = player 2
 		for(int turn = 0; turn < 2; turn++) {
 			nxt[mask][turn] = -1;
-			prec[mask][turn] = -1;
 			
 			//game is over
 			if (finalSituation >= 0) {
-				if (finalSituation == 0) dp[mask][turn] = TIE_POS;
-				else if (finalSituation == turn+1) dp[mask][turn] = WIN_POS;
-				else dp[mask][turn] = LOS_POS;
+				if (finalSituation == 0) {
+					dp[mask][turn] = TIE_POS;
+					winbal[mask][turn] = 0;
+				}
+				else if (finalSituation == turn+1) {
+					dp[mask][turn] = WIN_POS;
+					winbal[mask][turn] = 1;
+				}
+				else {
+					dp[mask][turn] = LOS_POS;
+					winbal[mask][turn] = -1;
+				}
+			}
+			
+			//random move at starting position
+			else if (mask == 0) {
+				dp[mask][turn] = TIE_POS;
+				npos = rand()%9;
+				int i = npos/3, j = npos%3;
+				board[i][j] = turn + 1;
+				nxt[mask][turn] = board2mask(board);
+				board[i][j] = 0;
+				winbal[mask][turn] = 0;
 			}
 			
 			//game ongoing
 			else {
-				dp[mask][turn] = 0;
-				myprec = 7;
+				dp[mask][turn] = 2;
 				npos = 0;
+				winbal[mask][turn] = 0;
+				int minbal = INF;
 				for(int i=0; i<3; i++) {
 					for(int j=0; j<3; j++) {
 						
@@ -140,45 +153,107 @@ void precompute() {
 						int newmask = board2mask(board);
 						board[i][j] = 0;
 						
-						//update my precedence and add move possibility
-						int noptions = dp[newmask][1-turn];
-						if (myprec > precedence[noptions]) {
+						//update my winning balance and add move possibility
+						winbal[mask][turn] -= winbal[newmask][1-turn];
+						if (dp[mask][turn] > dp[newmask][1-turn] ||
+							(dp[mask][turn] == dp[newmask][1-turn] && minbal > winbal[newmask][1-turn])) {
 							npos = 0;
-							myprec = precedence[noptions];
-							dp[mask][turn] = 0;
-							if (noptions & LOS_POS) dp[mask][turn] |= WIN_POS;
-							if (noptions & TIE_POS) dp[mask][turn] |= TIE_POS;
-							if (noptions & WIN_POS) dp[mask][turn] |= LOS_POS;
+							dp[mask][turn] = dp[newmask][1-turn];
+							/*if (minbal > winbal[newmask][1-turn])*/ minbal = winbal[newmask][1-turn];
 						}
-						if (myprec == precedence[noptions]) {
+						if (dp[mask][turn] == dp[newmask][1-turn] && minbal == winbal[newmask][1-turn]) {
 							possibilities[npos++] = newmask;
 						}
 					}
 				}
 				
 				//pick a random possibility between the moves with minimum precedence
+				dp[mask][turn] = -dp[mask][turn];
 				nxt[mask][turn] = possibilities[rand()%npos];
-				prec[mask][turn] = myprec;
 			}
 		}
 	}
 }
 
-int gameBoard[3][3];
+int possibleWinningSets(int board[3][3], int turn) {	//turn 1-indexed
+	int answer = 0;
+	bool found;
+	
+	//check lines
+	for(int i=0; i<3; i++) {
+		found = true;
+		for(int j=0; j<3 && found; j++) {
+			if (board[i][j] == 3-turn) found = false;
+		}
+		if (found) answer++;
+	}
+	
+	//check columns
+	for(int j=0; j<3; j++) {
+		found = true;
+		for(int i=0; i<3 && found; i++) {
+			if (board[i][j] == 3-turn) found = false;
+		}
+		if (found) answer++;
+	}
+	
+	//check main diagonal
+	found = true;
+	for(int i=0; i<3 && found; i++) {
+		if (board[i][i] == 3-turn) found = false;
+	}
+	if (found) answer++;
+	
+	//check secondary diagonal
+	found = true;
+	for(int i=0; i<3 && found; i++) {
+		if (board[i][2-i] == 3-turn) found = false;
+	}
+	if (found) answer++;
+	
+	//return answer
+	return answer;
+}
+
+//uses number of winning states and umber of losing states as heuristic
+int getNextState(int mask, int turn) {	//turn 0-indexed
+	int board[3][3], bestmask = -1, balance, newmask, bestbalance = -INF;
+	
+	//get the board from mask
+	mask2board(mask, board);
+	
+	//test all reachable states
+	for(int i=0; i<3; i++) {
+		for(int j=0; j<3; j++) {
+			if (board[i][j] != 0) continue;
+			board[i][j] = 1+turn;
+			newmask = board2mask(board);
+			balance = possibleWinningSets(board, 1+turn) - possibleWinningSets(board, 2-turn);
+			board[i][j] = 0;
+			if (balance > bestbalance) {
+				bestbalance = balance;
+				bestmask = newmask;
+			}
+		}
+	}
+	
+	//return best possible next state
+	return bestmask;
+}
 
 //reads input from human
-void getHumanInput(int * row, int * col) {
-	printf("You are X. Please insert your next move's row and column:\n");
+void getHumanInput(int * row, int * col, int gameBoard[3][3], int turn) {	//turn 0-indexed
+	printf("You are %c. Please insert your next move's row and column:\n", turn == 0 ? 'X' : 'O');
 	while(scanf("%d %d", row, col) != 2 || *row < 0 || *row > 2 || *col < 0 || *col > 2 || gameBoard[*row][*col] != 0) {
 		fflush(stdin);
 		printf("Invalid input. Please insert your next move's row and column:\n");
 	}
 }
 
-void printGameState(int turn, bool over) {
+void printGameState(int turn, bool over, int gameBoard[3][3]) {
 	
 	printf("================================================================\n");
-	printf("%s game board. Turn: %s\n\n", over ? "Final" : "Current", turn == 0 ? "Human" : "Machine");
+	printf("%s game board. Turn: %s\n\n", over ? "Final" : "Current", turn == TYPE_HUMAN ? "Human" : "Machine");
 	
 	//before line 0
 	printf("\t   0 1 2\n");
@@ -200,54 +275,49 @@ void printGameState(int turn, bool over) {
 	printf("\n\t  %c%c%c%c%c%c%c\n\n", 200, 205, 202, 205, 202, 205, 188);
 }
 
-int game(int turn) {
+int game(const int turnTypes[2]) {
 	
-	//precompute states each time a game start to get other random moves
-	precompute();
+	//completeSearch states each time a game start to get other random moves
+	completeSearch();
 	int currentState = 0, nturns = 0;
+	int gameBoard[3][3], turn = 0;
 	
 	do {
 		//get and print current game board
 		mask2board(currentState, gameBoard);
-		printGameState(turn, false);
-		//printf("precedence = %d\n", prec[currentState][turn]);
+		printGameState(turnTypes[turn], false, gameBoard);
 		
 		//human's turn
-		if (turn == 0) {
+		if (turnTypes[turn] == TYPE_HUMAN) {
 			int i, j;
-			getHumanInput(&i, &j);
-			gameBoard[i][j] = turn+1;
+			getHumanInput(&i, &j, gameBoard, turn);
+			gameBoard[i][j] = 1+turn;
 			currentState = board2mask(gameBoard);
-			turn = 1;
 		}
 		
-		//machine's turn
-		else {
+		//complete search machine's turn
+		if (turnTypes[turn] == TYPE_COMPLETE) {
 			currentState = nxt[currentState][turn];
-			turn = 0;
+		}
+		
+		//heuristic search machine's turn
+		if (turnTypes[turn] == TYPE_HEURISTIC) {
+			currentState = getNextState(currentState, turn);
 		}
 		
 		nturns++;
+		turn ^= 1;
 		
 	} while (nxt[currentState][turn] >= 0);
 	
-	//Game over message
+	//game over message
 	mask2board(currentState, gameBoard);
-	printGameState(currentState, true);
+	printGameState(turnTypes[turn], true, gameBoard);
 	
-	//game ended at human's play
-	if (turn == 0) {
-		if (dp[currentState][turn] == WIN_POS) printf("VICTORY! Congratulations!\n\n");
-		if (dp[currentState][turn] == LOS_POS) printf("DEFEAT! Better luck next time!\n\n");
-		if (dp[currentState][turn] == TIE_POS) printf("THAT'S A TIE! Play again!\n\n");
-	}
-	
-	//game ended at machine's play
-	if (turn == 1) {
-		if (dp[currentState][turn] == LOS_POS) printf("VICTORY! Congratulations!\n\n");
-		if (dp[currentState][turn] == WIN_POS) printf("DEFEAT! Better luck next time!\n\n");
-		if (dp[currentState][turn] == TIE_POS) printf("THAT'S A TIE! Play again!\n\n");
-	}
+	//print final game message
+	if (dp[currentState][turn] == WIN_POS) printf("VICTORY for player %d!\n\n", 1+turn);
+	if (dp[currentState][turn] == LOS_POS) printf("VICTORY for player %d!\n\n", 2-turn);
+	if (dp[currentState][turn] == TIE_POS) printf("TIE!\n\n");
 	
 }
 
@@ -256,15 +326,22 @@ int main() {
 	bool newgame = false;
 	printf("Welcome to Tic Tac ToITA\nBy Lucas Franca de Oliveira, COMP-18.\n\n");
 	char choice;
+	int turnTypes[2], t1, t2;
 	
 	do {
-		//read if player wants to start
-		printf("Would you like to start (Y/N)?\n");
-		while(scanf(" %c", &choice), choice != 'N' && choice != 'n' && choice != 'y' && choice != 'Y');
-		if (choice >= 'A' && choice <= 'Z') choice += 'a' - 'A';
+		
+		//reads game type
+		printf("Please input type of game players:\n%d = human, %d = heuristic machine, %d = complete search machine\n",
+			TYPE_HUMAN, TYPE_HEURISTIC, TYPE_COMPLETE);
+		while(scanf("%d %d", &t1, &t2) != 2 || t1 < 0 || t1 > 2 || t2 < 0 || t2 > 2) {
+			fflush(stdin);
+			printf("Invalid input. Please input type of game players:\n");
+		}
+		turnTypes[0] = t1;
+		turnTypes[1] = t2;
 		
 		//run game
-		game(choice == 'y' ? 0 : 1);
+		game(turnTypes);
 		
 		//ask if want to play again
 		printf("Would you like to play again (Y/N)?\n");
