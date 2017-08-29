@@ -12,7 +12,7 @@ using namespace std;
 #define DEFAULT_START 203
 #define DEFAULT_END 600
 #define INF 1e+18
-#define NITER 10000
+#define NITER 1000
 
 int readInt() {
 	char buffer[MAX_BUFFER], car;
@@ -51,9 +51,13 @@ inline double dist(int u, int v) {
 }
 
 double h[MAXN], g[MAXN];
+bool useG, useH;
 //função de prioridade, equivale a 'menor que'
 bool comp(int a, int b){
-	return g[a]+h[a] < g[b]+h[b];
+	double l = 0, r = 0;
+	if (useG) l += g[a], r += g[b];
+	if (useH) l += h[a], r += h[b];
+	return l < r;
 }
 
 class Heap{
@@ -141,6 +145,7 @@ void readGraph() {
 	}
 }
 
+bool visited[MAXN];
 double heapSearch() {
 	int u, v;
 	nodesProcessed = 0;
@@ -153,11 +158,12 @@ double heapSearch() {
 		//printf("g[%d] = %.3f\n", u, g[u]);
 		heap.pop();
 		nodesProcessed++;
+		visited[u] = true;
 		if (u == end) break;
 		for(int i=0; i<(int)adjList[u].size(); i++) {
 			v = adjList[u][i];
 			w = dist(u, v);
-			if (g[v] > g[u] + w) {
+			if (!visited[v] && !useG || g[v] > g[u] + w) {
 				g[v] = g[u] + w;
 				if (heap.count(v)) heap.update(v);
 				else heap.push(v);
@@ -167,12 +173,25 @@ double heapSearch() {
 	return g[end];
 }
 
+double greedyHeap() {
+	for(int u=1; u<=MAXN; u++) {
+		g[u] = INF;
+		h[u] = 0;
+		visited[u] = false;
+	}
+	useG = false;
+	useH = true;
+	return heapSearch();
+}
+
 double dijkstra() {
 	for(int u=1; u<=MAXN; u++) {
 		g[u] = INF;
 		h[u] = 0;
-		//printf("h[%d] = %.3f\n", u, h[u]);
+		visited[u] = false;
 	}
+	useG = true;
+	useH = false;
 	return heapSearch();
 }
 
@@ -180,13 +199,14 @@ double Astar() {
 	for(int u=1; u<=Nnodes; u++) {
 		g[u] = INF;
 		h[u] = dist(u, end);
-		//printf("h[%d] = %.3f\n", u, h[u]);
+		visited[u] = false;
 	}
+	useG = true;
+	useH = true;
 	return heapSearch();
 }
 
-bool visited[MAXN];
-double greedy() {
+double greedyDfs() {
 	int u, v;
 	double w;
 	for(u=1; u<=Nnodes; u++) {
@@ -261,10 +281,18 @@ int main(int argc, char *argv[]) {
 	elapsedTime = (endTime - startTime) / (CLOCKS_PER_SEC*1.0*NITER);
 	printf("Result (sub-optimal): %.3f, average time: %.7f, nodes processed: %d.\n", result, elapsedTime, nodesProcessed);
 	
-	//Execute Greedy
-	printf("Running Greedy... ");
+	//Execute Greedy Heap
+	printf("Running Greedy Heap... ");
 	startTime = clock();
-	for(int i=0; i<NITER; i++) result = greedy();
+	for(int i=0; i<NITER; i++) result = greedyHeap();
+	endTime = clock();
+	elapsedTime = (endTime - startTime) / (CLOCKS_PER_SEC*1.0*NITER);
+	printf("Result (non-optimal): %.3f, average time: %.7f, nodes processed: %d.\n", result, elapsedTime, nodesProcessed);
+	
+	//Execute Greedy DFS
+	printf("Running Greedy DFS... ");
+	startTime = clock();
+	for(int i=0; i<NITER; i++) result = greedyDfs();
 	endTime = clock();
 	elapsedTime = (endTime - startTime) / (CLOCKS_PER_SEC*1.0*NITER);
 	printf("Result (non-optimal): %.3f, average time: %.7f, nodes processed: %d.\n", result, elapsedTime, nodesProcessed);
